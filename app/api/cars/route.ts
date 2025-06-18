@@ -62,51 +62,41 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const car = await request.json()
-    const carId = uuidv4() // Generate a unique ID for the car
 
-    // Create directory for car images
+    // Use "temp" folder first — we'll move images later after getting the real car ID
     const publicPath = process.env.NODE_ENV === "production" ? "/app/public" : "./public"
-    const carImageDir = join(publicPath, "cars", carId)
-    await mkdir(carImageDir, { recursive: true })
+    const tempDir = join(publicPath, "cars", "temp")
 
-    // Process images - move from temp to permanent location
     const processedImages = []
     if (car.images && Array.isArray(car.images)) {
       for (const imageUrl of car.images) {
         if (imageUrl.includes('/cars/temp/')) {
           const filename = imageUrl.split('/').pop()
-          const oldPath = join(publicPath, 'cars', 'temp', filename)
-          const newPath = join(carImageDir, filename)
-          
-          try {
-            await rename(oldPath, newPath)
-            processedImages.push(`/cars/${carId}/${filename}`)
-          } catch (error) {
-            console.error(`Failed to move image ${filename}:`, error)
-            // Keep the original URL if move fails
-            processedImages.push(imageUrl)
-          }
+          const oldPath = join(tempDir, filename)
+          processedImages.push({ filename, path: oldPath })
         } else {
-          // Keep already processed images
-          processedImages.push(imageUrl)
+          processedImages.push({ url: imageUrl }) // already permanent
         }
       }
     }
 
-    // Set main image (first image or placeholder)
-    const mainImage = processedImages.length > 0 ? processedImages[0] : car.image || "/placeholder.svg"
+    // Set placeholder for now — will be updated with moved path later
+    const mainImage = processedImages.length > 0 && processedImages[0].url 
+      ? processedImages[0].url 
+      : car.image || "/placeholder.svg"
 
+    // Insert car (without image movement yet)
     const result = await sql`
       INSERT INTO cars (
-        id, make, model, year, price, type, mileage, fuel_type, seats,
+        make, model, year, price, type, mileage, fuel_type, seats,
         in_stock, featured, selling, image_url, images, description,
         daily_rate, weekly_rate, monthly_rate, available, body_type,
         condition, engine_size, doors, cylinders, color, vin,
         transmission, drive_type, features, payment_options, warranty
       ) VALUES (
-        ${carId}, ${car.make}, ${car.model}, ${car.year}, ${car.price}, ${car.type},
+        ${car.make}, ${car.model}, ${car.year}, ${car.price}, ${car.type},
         ${car.mileage}, ${car.fuel}, ${car.seats}, ${car.inStock},
-        ${car.featured}, ${car.selling}, ${mainImage}, ${JSON.stringify(processedImages)},
+        ${car.featured}, ${car.selling}, ${mainImage}, ${JSON.stringify([])},
         ${car.description}, ${car.dailyRate || null}, ${car.weeklyRate || null},
         ${car.monthlyRate || null}, ${car.available !== false}, ${car.bodyType},
         ${car.condition}, ${car.engineSize}, ${car.doors}, ${car.cylinders},
@@ -116,17 +106,48 @@ export async function POST(request: Request) {
       ) RETURNING id
     `
 
+    const carId = result[0].id.toString()
+    const carImageDir = join(publicPath, "cars", carId)
+    await mkdir(carImageDir, { recursive: true })
+
+    const finalImageUrls = []
+
+    for (const img of processedImages) {
+      if (img.filename && img.path) {
+        const newPath = join(carImageDir, img.filename)
+        try {
+          await rename(img.path, newPath)
+          finalImageUrls.push(`/cars/${carId}/${img.filename}`)
+        } catch (error) {
+          console.error(`Failed to move image ${img.filename}:`, error)
+          finalImageUrls.push(`/cars/temp/${img.filename}`)
+        }
+      } else {
+        finalImageUrls.push(img.url)
+      }
+    }
+
+    // Update car record with final images and main image
+    const finalMainImage = finalImageUrls.length > 0 ? finalImageUrls[0] : mainImage
+
+    await sql`
+      UPDATE cars 
+      SET image_url = ${finalMainImage}, images = ${JSON.stringify(finalImageUrls)}
+      WHERE id = ${carId}
+    `
+
     return NextResponse.json({ 
       success: true, 
-      id: result[0].id,
-      image: mainImage,
-      images: processedImages
+      id: carId,
+      image: finalMainImage,
+      images: finalImageUrls
     })
   } catch (error) {
     console.error("Failed to create car:", error)
     return NextResponse.json({ error: "Failed to create car" }, { status: 500 })
   }
 }
+
 
 // Add this helper endpoint for image uploads
 export async function PUT(request: Request) {

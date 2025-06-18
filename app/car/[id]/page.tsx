@@ -34,6 +34,8 @@ export default function CarDetailPage() {
   const { theme } = useTheme()
   const { toast } = useToast()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
   const [isSaved, setIsSaved] = useState(false)
   const [carImages, setCarImages] = useState<string[]>([])
 
@@ -127,6 +129,8 @@ const [carForm, setCarForm] = useState({
   paymentOptions: [] as string[],
   warranty: [] as string[],
 });
+
+
 
 const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -304,6 +308,45 @@ const handleCarSubmit = async (e: React.FormEvent) => {
                       className="object-cover"
                       priority
                     />
+                 <Button
+  variant="secondary"
+  size="sm"
+  className="absolute bottom-4 left-4 bg-white/90 hover:bg-white text-black font-medium px-3 py-1"
+  onClick={() => setIsModalOpen(true)}
+>
+  View HD
+</Button>
+{isModalOpen && (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+    onClick={() => setIsModalOpen(false)} // Close on background click
+  >
+    <div
+      className="relative w-auto p-4 bg-white rounded-lg max-h-[100vh]"
+      onClick={(e) => e.stopPropagation()}
+      style={{ maxHeight: '100vh' }}
+    >
+      <Image
+        src={carImages[currentImageIndex]}
+        alt="Full HD Car Image"
+        width={1920}    // required by Next.js Image
+        height={1080}   // required by Next.js Image
+        className="h-[100vh] w-auto object-contain rounded"
+        priority
+      />
+      <button
+        onClick={() => setIsModalOpen(false)}
+        className="absolute top-4 right-4 bg-white text-black px-4 py-1 rounded hover:bg-gray-200 font-semibold shadow"
+      >
+        ✕ Close
+      </button>
+    </div>
+  </div>
+)}
+
+
+
+
                     {carImages.length > 1 && (
                       <>
                         <Button
